@@ -1,0 +1,127 @@
+REPORT Z_ALV_TOP_OF_PAGE.
+
+TYPE-POOLS: slis.
+
+*--- Data Declarations ---
+DATA: gt_sflight   TYPE TABLE OF sflight,
+      gs_sflight   TYPE sflight,
+      gt_fieldcat  TYPE slis_t_fieldcat_alv,
+      gs_layout    TYPE slis_layout_alv,
+      gt_header    TYPE slis_t_listheader,
+      gs_header    TYPE slis_listheader.
+
+*--- Selection Screen Parameter ---
+SELECT-OPTIONS: so_carr FOR sflight-carrid OBLIGATORY.
+
+*----------------------------------------------------------------------*
+* START-OF-SELECTION (Main Logic)
+*----------------------------------------------------------------------*
+START-OF-SELECTION.
+
+  PERFORM get_data.
+
+  PERFORM build_fieldcat.
+
+  PERFORM display_alv.
+
+*----------------------------------------------------------------------*
+* FORM get_data
+*----------------------------------------------------------------------*
+FORM get_data.
+
+  SELECT *
+    FROM sflight
+    INTO TABLE gt_sflight
+    WHERE carrid IN so_carr.
+
+ENDFORM. " get_data
+
+*----------------------------------------------------------------------*
+* FORM build_fieldcat
+*----------------------------------------------------------------------*
+FORM build_fieldcat.
+
+  PERFORM alv_fieldcat USING:
+    'CARRID'    'Airline ID',
+    'CONNID'    'Flight No.',
+    'FLDATE'    'Flight Date',
+    'SEATSMAX'  'Max Seats',
+    'SEATSOCC'  'Occupied Seats'.
+
+ENDFORM. " build_fieldcat
+
+*----------------------------------------------------------------------*
+* FORM alv_fieldcat
+*----------------------------------------------------------------------*
+FORM alv_fieldcat USING    p_fieldname
+                            p_coltext.
+
+  DATA: ls_fieldcat TYPE slis_fieldcat_alv.
+
+  ls_fieldcat-fieldname = p_fieldname.
+  ls_fieldcat-seltext_l = p_coltext.
+  ls_fieldcat-col_pos   = sy-tabix.
+
+  APPEND ls_fieldcat TO gt_fieldcat.
+
+ENDFORM. " alv_fieldcat
+
+*----------------------------------------------------------------------*
+* FORM display_alv
+*---------------------------------------------------------------------*
+FORM display_alv.
+
+  gs_layout-colwidth_optimize = 'X'.
+  gs_layout-zebra             = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program  = sy-repid             " CRITICAL for events
+      i_callback_top_of_page = 'TOP_PAGE_HEADER' " Link to the header FORM
+      is_layout           = gs_layout
+      it_fieldcat         = gt_fieldcat
+    TABLES
+      t_outtab            = gt_sflight
+    EXCEPTIONS
+      program_error       = 1
+      OTHERS              = 2.
+
+ENDFORM. " display_alv
+
+*----------------------------------------------------------------------*
+* FORM TOP_PAGE_HEADER
+*----------------------------------------------------------------------*
+FORM top_page_header.
+
+  REFRESH gt_header.
+
+* 1. Main Report Title (Type 'H' - Header: BOLD text)
+  gs_header-typ  = 'H'.
+  gs_header-info = 'SFLIGHT Data Selection Report'.
+  APPEND gs_header TO gt_header.
+  CLEAR gs_header.
+
+* 2. Parameter/Selection Criteria (Type 'S' - Selection: Key BOLD, Info Normal)
+  LOOP AT so_carr INTO DATA(ls_carr_sel).
+    gs_header-typ  = 'S'.
+    gs_header-key  = 'Airline Selected:'.
+    gs_header-info = ls_carr_sel-low.
+    APPEND gs_header TO gt_header.
+    CLEAR gs_header.
+  ENDLOOP.
+
+* 3. Run Date (Type 'A' - Action: Normal text)
+  DATA: lv_date(15) TYPE c.
+  WRITE sy-datum TO lv_date DD/MM/YYYY.
+  gs_header-typ = 'A'.
+  gs_header-key = 'Report Run Date:'.
+  gs_header-info = lv_date.
+  APPEND gs_header TO gt_header.
+  CLEAR gs_header.
+
+* Call the function module to display the header content
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      it_list_commentary = gt_header.
+
+ENDFORM. " TOP_PAGE_HEADER
